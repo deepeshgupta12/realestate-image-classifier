@@ -7,13 +7,93 @@ import torch
 import open_clip
 import yaml
 from PIL import Image
+import torch.nn as nn
+from typing import Optional
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
+class RealEstateLinearHead:
+    """
+    Uses CLIP image encoder + your trained linear layer to classify a small set of classes.
+    """
+    def __init__(self, weights_path: Path, device: Optional[str] = None):
+        self.weights_path = weights_path
+        if device is None:
+            # prefer Apple Metal if available
+            if torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        self.device = device
 
+        if not self.weights_path.exists():
+            raise FileNotFoundError(f"Weights not found: {self.weights_path}")
+
+        # load CLIP image encoder + preprocess
+        model, _, preprocess = open_clip.create_model_and_transforms(
+            "ViT-B-32", pretrained="laion2b_s34b_b79k"
+        )
+        model.eval()
+        self.model = model.to(self.device)
+        self.preprocess = preprocess
+
+        ckpt = torch.load(self.weights_path, map_location="cpu")
+        self.class_names = ckpt["class_names"]  # e.g. ["interiors_kitchen_real", ...]
+        # infer embedding dim
+        with torch.no_grad():
+            dummy = torch.randn(1, 3, 224, 224).to(self.device)
+            emb = self.model.encode_image(dummy)
+        emb_dim = emb.shape[-1]
+
+        head = nn.Linear(emb_dim, len(self.class_names))
+        head.load_state_dict(ckpt["state_dict"])
+        head.eval()
+        self.head = head.to(self.device)
+
+        # map your training class names to taxonomy labels
+        self.class_to_taxonomy = {
+            "interiors_kitchen_real": ("Interiors", "Kitchen (Real Photo)"),
+            "interiors_bedroom": ("Interiors", "Bedroom"),
+            "amenities_common_area": ("Amenities", "Common Area / Seating / Lobby"),
+            "exteriors_building": ("Exteriors & Facade", "Building / Tower Exterior"),
+            "marketing_rendered": ("Marketing / Creative", "Rendered Interior / Exterior"),
+            "plans_master": ("Plans", "Master Plan"),
+        }
+
+    def predict(self, pil_image: Image.Image) -> Dict[str, Any]:
+        img = self.preprocess(pil_image).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            feats = self.model.encode_image(img)
+            logits = self.head(feats)
+            probs = torch.softmax(logits, dim=-1)
+            topk = torch.topk(probs, k=min(3, len(self.class_names)), dim=-1)
+
+        best_idx = int(topk.indices[0, 0].cpu())
+        best_prob = float(topk.values[0, 0].cpu())
+        best_name = self.class_names[best_idx]
+        parent, child = self.class_to_taxonomy.get(best_name, ("UNKNOWN", None))
+
+        alternates = []
+        for j in range(1, topk.indices.shape[1]):
+            idx = int(topk.indices[0, j].cpu())
+            prob = float(topk.values[0, j].cpu())
+            name = self.class_names[idx]
+            p, c = self.class_to_taxonomy.get(name, ("UNKNOWN", None))
+            alternates.append(
+                {"raw_label": name, "parent": p, "child": c, "confidence": prob}
+            )
+
+        return {
+            "raw_label": best_name,
+            "parent": parent,
+            "child": child,
+            "confidence": best_prob,
+            "alternates": alternates,
+        }
+    
 class RealEstateZeroShotClassifier:
     """
     Zero-shot classifier over our taxonomy using CLIP-like model.
