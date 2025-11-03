@@ -1,0 +1,40 @@
+global_templates:
+  - "real estate listing photo of {label}"
+  - "property listing image showing {label}"
+  - "apartment or housing society photo of {label}"
+
+class_prompts:
+  "Interiors: Kitchen (Real Photo)":
+    - "real kitchen photo in an apartment, with cabinets, sink, stove, real lighting"
+    - "actual kitchen photograph taken by owner or agent, not render"
+  "Marketing / Creative: Rendered Interior / Exterior":
+    - "3d render or computer generated real estate image, very clean, studio lighting"
+    - "marketing brochure style image of property, cgi, not real photo"
+  "Amenities: Common Area / Seating / Lobby":
+    - "indoor common area of residential clubhouse with seating and decor"
+    - "recreation center or lounge area inside housing project"
+  "Amenities: Clubhouse / Indoor Recreation":
+    - "residential clubhouse interior, community hall, indoor recreation"
+  "Exteriors & Facade: Building / Tower Exterior":
+    - "apartment building or residential tower exterior photo"
+    - "real estate project facade or exterior view"
+  "Exteriors & Facade: Entry Gate / Dropoff":
+    - "project entry gate or dropoff area at residential project"
+  "Exteriors & Facade: Inside Compound / Driveway":
+    - "internal driveway or compound of housing society"
+  "Plans: Master Plan":
+    - "project master plan or site layout drawing"
+  "Plans: Unit / Floor Plan":
+    - "flat floor plan or apartment unit layout drawing"
+  "Plans: Location Map":
+    - "location map image showing nearby areas"
+  "Amenities: Gym":
+    - "apartment society gym with treadmills or weights"
+  "Amenities: Swimming Pool":
+    - "residential swimming pool amenity photo"
+  "Amenities: Kids Play Area":
+    - "kids play area or playground in residential society"
+  "Amenities: Park / Landscape":
+    - "landscaped garden or park inside housing project"
+  "Junk / Other: Not Real Estate":
+    - "unrelated screenshot or document not suitable for property listing"

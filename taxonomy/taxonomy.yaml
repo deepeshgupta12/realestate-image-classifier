@@ -1,0 +1,39 @@
+parents:
+  - name: Interiors
+    children:
+      - name: Bedroom
+      - name: Living
+      - name: Kitchen (Real Photo)
+      - name: Bathroom
+      - name: Balcony
+  - name: Amenities
+    children:
+      - name: Gym
+      - name: Swimming Pool
+      - name: Clubhouse / Indoor Recreation
+      - name: Kids Play Area
+      - name: Park / Landscape
+      - name: Common Area / Seating / Lobby
+  - name: Exteriors & Facade
+    children:
+      - name: Building / Tower Exterior
+      - name: Entry Gate / Dropoff
+      - name: Inside Compound / Driveway
+  - name: Plans
+    children:
+      - name: Master Plan
+      - name: Unit / Floor Plan
+      - name: Location Map
+      - name: Brochure / Document
+  - name: Construction / Site
+    children:
+      - name: Site Progress
+      - name: Under Construction Tower
+  - name: Marketing / Creative
+    children:
+      - name: Rendered Interior / Exterior
+      - name: Offer / Promo Tile
+  - name: Junk / Other
+    children:
+      - name: Low Quality
+      - name: Not Real Estate
