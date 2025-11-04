@@ -4,7 +4,7 @@ global_templates:
   - "apartment or housing society photo of {label}"
 
 class_prompts:
-  "Interiors: Kitchen (Real Photo)":
+  "Interiors: Kitchen":
     - "real kitchen photo in an apartment, with cabinets, sink, stove, real lighting"
     - "actual kitchen photograph taken by owner or agent, not render"
   "Marketing / Creative: Rendered Interior / Exterior":

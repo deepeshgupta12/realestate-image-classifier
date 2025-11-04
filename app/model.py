@@ -41,7 +41,7 @@ class RealEstateLinearHead:
         self.preprocess = preprocess
 
         ckpt = torch.load(self.weights_path, map_location="cpu")
-        self.class_names = ckpt["class_names"]  # e.g. ["interiors_kitchen_real", ...]
+        self.class_names = ckpt["class_names"]  # e.g. ["interiors_kitchen", ...]
         # infer embedding dim
         with torch.no_grad():
             dummy = torch.randn(1, 3, 224, 224).to(self.device)

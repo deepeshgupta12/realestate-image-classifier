@@ -39,7 +39,7 @@ def main():
 
     # map your folders to label names (same as we created in bash)
     class_names = [
-        "interiors_kitchen_real",
+        "interiors_kitchen",
         "interiors_bedroom",
         "amenities_common_area",
         "exteriors_building",

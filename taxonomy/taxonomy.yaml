@@ -3,7 +3,7 @@ parents:
     children:
       - name: Bedroom
       - name: Living
-      - name: Kitchen (Real Photo)
+      - name: Kitchen
       - name: Bathroom
       - name: Balcony
   - name: Amenities

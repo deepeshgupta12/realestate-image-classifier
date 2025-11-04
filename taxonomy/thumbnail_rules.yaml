@@ -1,0 +1,43 @@
+aspect_ratio: "4:3"          # target crop for listing card
+min_resolution: [900, 675]   # W,H minimum after crop
+
+# prefer exterior or hero interiors, avoid plans/renders unless fallback
+class_weights:
+  "Exteriors & Facade ▸ Building / Tower Exterior": 1.00
+  "Interiors ▸ Living": 0.95
+  "Interiors ▸ Bedroom": 0.96
+  "Interiors ▸ Kitchen (Real Photo)": 0.86
+  "Amenities ▸ Swimming Pool": 0.82
+  "Amenities ▸ Clubhouse / Indoor Recreation": 0.80
+  "Amenities ▸ Common Area / Seating / Lobby": 0.78
+  "Marketing / Creative ▸ Rendered Interior / Exterior": 0.35
+  "Plans ▸ Master Plan": 0.15
+
+penalties:
+  face_present: 0.15     # subtract if faces detected
+  too_dark: 0.10         # low brightness
+  too_bright: 0.10       # overexposed
+  blur: 0.25             # low sharpness
+  duplicate: 0.30        # near-duplicate vs another candidate
+  portrait_orientation: 0.10
+
+thresholds:
+  min_quality_score: 0.35  # filter out very poor images
+
+weights:                    # how to mix signals
+  class: 0.55
+  quality: 0.30
+  composition: 0.15
+
+banned_labels:
+  - "Interiors ▸ Bathroom"
+  - "Interiors ▸ Washroom"
+  - "Interiors ▸ Toilet"
+  - "Interiors ▸ Powder Room"
+  - "Interiors ▸ Restroom"
+
+penalties:
+  low_res: 0.25
+
+aspect_ratio: "4:3"
+min_resolution: [900, 675]
