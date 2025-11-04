@@ -1,230 +1,241 @@
-Real Estate Image Classifier
+# Real Estate Image Classifier & Thumbnail Selector
 
-A FastAPI-based service that classifies real-estate images into a hierarchical taxonomy and returns structured labels with confidence and action hints for your CMS. It combines a zero-shot CLIP classifier (open-clip) with an optional trained linear head on CLIP embeddings to correct domain-specific mistakes (e.g., real kitchen vs rendered interior, clubhouse vs common area, exterior vs interior).
+FastAPI service to **classify real‑estate photos** (Kitchen, Bedroom, Clubhouse, Master Plan, etc.) and **auto‑select the best listing thumbnail** using configurable business rules (e.g., *never pick Bathroom*).  
+Runs fully local on macOS, supports Apple Silicon (MPS), and integrates with your CMS via HTTP endpoints.
 
-- API-first: POST /classify-image, POST /classify-batch
-- Hybrid inference: linear head (your data) + zero-shot CLIP (generalist)
-- Domain prompts + taxonomy: editable YAMLs
-- Logging: CSV log for auditing and evaluation
-- Local-first: runs fully on macOS CPU; supports Apple Silicon (MPS)
-⸻
-Table of Contents
+---
 
-1. Taxonomy
-2. Project Structure
-3. Quick Start
-4. Run the API
-5. API
-6. Hybrid Model
-7. Training the Linear Head
-8. Batch + Logging
-9. Evaluation
-10. Performance Tips
-11. Deployment
-12. License
-⸻
-Taxonomy
+## Highlights
 
-Edit taxonomy/taxonomy.yaml to control the Parent → Child labels. Example (v1):
+- **Hybrid classifier**
+  - **Zero‑shot OpenCLIP** (ViT‑B/32) with domain prompts from YAML.
+  - **Optional linear head** trained on your images for domain fixes.
+- **Thumbnail selector**
+  - Scores candidates by class priority, sharpness, exposure, contrast, saliency, **duplicate penalty**, and **size**.
+  - **Hard ban** on Bathroom/Washroom/Toilet (configurable).
+  - **Smart low‑res fallback**: if all images are below the min gate, it still picks the best and flags `policy_fallback=true`.
+  - Returns a **4:3 crop** `(x,y,w,h)` for consistent cards.
+- **API‑first** with `/docs` (Swagger), CSV logging, and YAML‑driven taxonomy/thresholds/rules.
 
+---
+
+## Project Structure
+
+```
+realestate-image-classifier/
+├── app/
+│   ├── main.py               # FastAPI endpoints
+│   ├── model.py              # Zero-shot CLIP + optional Linear Head
+│   ├── train_linear.py       # Train linear head on your images
+│   ├── eval_metrics.py       # Accuracy/F1/auto-publish precision
+│   ├── thumbnail.py          # Thumbnail selector (ban + low-res fallback)
+│   └── utils.py              # CSV logging helper
+├── taxonomy/
+│   ├── taxonomy.yaml         # Parent → Child (→ Grandchild) labels
+│   ├── prompts.yaml          # CLIP domain prompts per label
+│   ├── thresholds.yaml       # Action thresholds (global/parent/child)
+│   └── thumbnail_rules.yaml  # Aspect, min res, class weights, bans
+├── models/                   # Saved linear-head weights (*.pt)
+├── data/                     # Training/validation images
+├── logs/                     # predictions.csv
+├── .gitignore
+└── README.md
+```
+
+---
+
+## Quick Start (macOS)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+
+# core deps
+pip install fastapi uvicorn pillow python-multipart pyyaml pandas scikit-learn imagehash
+
+# PyTorch CPU wheels (simple start); switch to MPS later in model.py
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# OpenCLIP and OpenCV
+pip install open-clip-torch opencv-contrib-python-headless
+
+# run API
+python -m uvicorn app.main:app --reload
+```
+
+Open **http://127.0.0.1:8000/docs** for Swagger UI. Health check at **/health**.
+
+> **Apple Silicon (MPS):** In `app/model.py`, set `self.device = "mps"` when `torch.backends.mps.is_available()`.
+
+---
+
+## Configuration (YAML)
+
+### 1) `taxonomy/taxonomy.yaml`
+Controls label hierarchy (Parent → Child). Example:
+```yaml
 parents:
   - name: Interiors
     children:
       - name: Bedroom
       - name: Living
-      - name: Kitchen (Real Photo)
+      - name: Kitchen
       - name: Bathroom
-      - name: Balcony
   - name: Amenities
     children:
       - name: Gym
       - name: Swimming Pool
       - name: Clubhouse / Indoor Recreation
-      - name: Kids Play Area
-      - name: Park / Landscape
       - name: Common Area / Seating / Lobby
   - name: Exteriors & Facade
     children:
       - name: Building / Tower Exterior
-      - name: Entry Gate / Dropoff
-      - name: Inside Compound / Driveway
   - name: Plans
     children:
       - name: Master Plan
       - name: Unit / Floor Plan
-      - name: Location Map
-      - name: Brochure / Document
   - name: Marketing / Creative
     children:
       - name: Rendered Interior / Exterior
-      - name: Offer / Promo Tile
-  - name: Junk / Other
-    children:
-      - name: Low Quality
-      - name: Not Real Estate
+```
 
+### 2) `taxonomy/prompts.yaml`
+Defines CLIP text prompts per label to improve zero‑shot separability.
 
-Prompts to bias CLIP can be edited in taxonomy/prompts.yaml.
-⸻
-Project Structure
+### 3) `taxonomy/thresholds.yaml`
+Set publish/review thresholds globally, by parent, and by child:
+```yaml
+global:
+  auto_publish: 0.80
+  needs_review: 0.60
 
-realestate-image-classifier/
-├── app/
-│   ├── __init__.py
-│   ├── main.py             # FastAPI entrypoint (single/batch endpoints, logging)
-│   ├── model.py            # Zero-shot CLIP + LinearHead (hybrid)
-│   ├── train_linear.py     # Train a small linear head on your images
-│   ├── eval_metrics.py     # Compute accuracy, confusion, auto-publish precision
-│   └── utils.py            # CSV logging helper
-├── taxonomy/
-│   ├── taxonomy.yaml       # Parent → Child labels
-│   └── prompts.yaml        # Domain prompts for CLIP
-├── models/                 # Saved weights (ignored in git)
-├── data/                   # Your training/validation images (ignored in git)
-├── logs/                   # predictions.csv (ignored in git)
-├── .gitignore
-└── README.md
+parents:
+  Plans:
+    auto_publish: 0.60
 
-⸻
-Quick Start
+children:
+  "Interiors ▸ Kitchen":
+    auto_publish: 0.78
+```
 
-# 1) env
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
+### 4) `taxonomy/thumbnail_rules.yaml`
+Controls selector behavior:
+```yaml
+aspect_ratio: "4:3"
+min_resolution: [900, 675]   # lower to [640,480] for UGC if needed
 
-# 2) install deps (CPU wheels)
-pip install fastapi uvicorn pillow python-multipart pyyaml
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install open-clip-torch pandas scikit-learn
+weights:
+  class: 0.55
+  quality: 0.30
+  composition: 0.15
 
+penalties:
+  face_present: 0.15
+  too_dark: 0.10
+  too_bright: 0.10
+  blur: 0.25
+  duplicate: 0.30
+  portrait_orientation: 0.10
+  low_res: 0.25             # used in low-res fallback
 
-If you are on Apple Silicon, you can keep CPU wheels to start. Later you can enable Metal (MPS) in model.py to speed up inference.
-⸻
-Run the API
+class_weights:
+  "Exteriors & Facade ▸ Building / Tower Exterior": 1.00
+  "Interiors ▸ Living": 0.95
+  "Interiors ▸ Bedroom": 0.92
+  "Interiors ▸ Kitchen": 0.88
+  "Amenities ▸ Swimming Pool": 0.82
+  "Amenities ▸ Clubhouse / Indoor Recreation": 0.80
+  "Amenities ▸ Common Area / Seating / Lobby": 0.78
+  "Marketing / Creative ▸ Rendered Interior / Exterior": 0.35
+  "Plans ▸ Master Plan": 0.15
 
-source .venv/bin/activate
-python -m uvicorn app.main:app --reload
+banned_labels:
+  - "Interiors ▸ Bathroom"
+  - "Interiors ▸ Washroom"
+  - "Interiors ▸ Toilet"
+  - "Interiors ▸ Powder Room"
+  - "Interiors ▸ Restroom"
+```
 
+---
 
-Open:
-- Health: http://127.0.0.1:8000/health
-- Swagger UI: http://127.0.0.1:8000/docs
-⸻
-API
+## API Endpoints
 
-GET /health
-Returns model/taxonomy status, number of zero-shot labels, and whether the linear head is loaded.
+- **`GET /health`** → model/taxonomy status.
+- **`POST /classify-image`** → single image multipart, returns `{parent, child, confidence, action, alternates}`.
+- **`POST /classify-batch`** → multiple files, returns array of results.
+- **`POST /choose-thumbnail`** → multiple files, returns the **selected thumbnail** and `suggested_crop_xywh`.
 
-POST /classify-image
-Multipart upload (file=@image.jpg). Returns:
+**Decisions (`action`)**
+- Default rules in `main.py`:
+  - `Plans` with conf ≥ 0.60 → `auto_publish`
+  - `Marketing` with conf ≥ 0.60 → `needs_review`
+  - Else conf ≥ 0.80 → `auto_publish`; 0.60–0.80 → `needs_review`; otherwise `reject`
+- Override per parent/child via `thresholds.yaml`.
 
-{
-  "filename": "kitchen_01.jpg",
-  "image_info": {"width": 1920, "height": 1080, "mode": "RGB"},
-  "parent": "Interiors",
-  "child": "Kitchen (Real Photo)",
-  "grandchild": null,
-  "confidence": 0.87,
-  "alternates": [
-    {"raw_label": "Interiors: Living", "parent": "Interiors", "child": "Living", "confidence": 0.41}
-  ],
-  "action": "auto_publish",
-  "model_version": "hybrid-v1",
-  "decision_source": "linear_head"
-}
+**Example (curl):**
+```bash
+curl -s -X POST "http://127.0.0.1:8000/classify-image"   -F "file=@/path/to/kitchen.jpg" | jq
 
+curl -s -X POST "http://127.0.0.1:8000/choose-thumbnail"   -F "files=@/path/1.jpg" -F "files=@/path/2.jpg" -F "files=@/path/3.jpg" | jq
+```
 
-POST /classify-batch
-files=@img1.jpg & files=@img2.jpg … (multiple form fields). Returns per-file JSON array.
+---
 
-Business rules (action)
-- Plans with conf ≥ 0.60 → auto_publish
-- Marketing with conf ≥ 0.60 → needs_review
-- Otherwise conf ≥ 0.80 → auto_publish, 0.60–0.80 → needs_review, else reject
+## Training the Linear Head (optional)
 
-You can tune thresholds in main.py.
-⸻
-Hybrid Model
-
-- Zero-shot CLIP (RealEstateZeroShotClassifier): generalist across all taxonomy labels using taxonomy/prompts.yaml for domain phrasing.
-- Linear head (RealEstateLinearHead): small classifier trained on your images to fix frequent mistakes; preferred when confidence ≥ 0.80 by default.
-
-Load path for weights: models/clip_linear_realestate.pt.
-⸻
-Training the Linear Head
-
-Folders (example classes):
-data/train/interiors_kitchen_real/
+Prepare folders (one per child class):
+```
+data/train/interiors_kitchen/
 data/train/interiors_bedroom/
 data/train/amenities_common_area/
 data/train/exteriors_building/
 data/train/marketing_rendered/
 data/train/plans_master/
-
-Place ~12–20 images per class (more is better). Then:
-
+...
+```
+Add 12–50 images per class. Then:
+```bash
 source .venv/bin/activate
 python -m app.train_linear
+```
+This writes `models/clip_linear_realestate.pt`. `main.py` auto‑loads it and prefers it if `confidence ≥ 0.80`.
 
-This freezes CLIP, trains a linear layer, and writes:
-models/clip_linear_realestate.pt
+---
 
+## Evaluation
 
-Tip: add light augmentations (resize/crop, compression, horizontal flip where applicable) to better match WhatsApp/agent uploads.
-⸻
-Batch + Logging
-
-- POST /classify-batch accepts multiple files.
-- Every prediction appends a CSV row to logs/predictions.csv with:
-    - filename, parent, child, confidence, action, source, width, height, mode, model_version, timestamp
-
-This enables automated QA and A/B checks in your CMS workflow.
-⸻
-Evaluation
-
-Prepare a ground-truth CSV:
+Create a ground‑truth CSV:
+```
 filename,parent,child
-kitchen_01.jpg,Interiors,Kitchen (Real Photo)
-...
-
-
+img001.jpg,Interiors,Kitchen
+```
 Run:
-source .venv/bin/activate
-python app/eval_metrics.py --truth /path/to/ground_truth.csv --preds logs/predictions.csv --out eval_report.txt
+```bash
+python app/eval_metrics.py   --truth /path/to/ground_truth.csv   --preds logs/predictions.csv   --out eval_report.txt
+```
 
+---
 
-Outputs:
-- Overall precision/recall/F1 (Parent ▸ Child)
-- Auto-publish precision at current thresholds
-- Per-parent accuracy
-- Confusion matrix
+## Deployment
 
-Use this to tune thresholds and identify classes needing more samples.
-⸻
-Performance Tips
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+```
 
-- Switch to Apple Metal (MPS) if available. In model.py, prefer "mps" when torch.backends.mps.is_available().
-- Keep prompts specific but concise (avoid overly long sentences).
-- Expand the linear head with more classes when you see recurring confusions.
-- Cache model + text embeddings at startup (already handled).
-⸻
-Deployment
-
-Simple systemd + Uvicorn
-Run the same uvicorn command as a service and put Nginx in front for TLS and auth.
-
-Docker (example)
+Docker example:
+```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 COPY . /app
-RUN pip install --no-cache-dir fastapi uvicorn pillow python-multipart pyyaml \
-    && pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir open-clip-torch pandas scikit-learn
+RUN pip install --no-cache-dir fastapi uvicorn pillow python-multipart pyyaml pandas scikit-learn imagehash     && pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu     && pip install --no-cache-dir open-clip-torch opencv-contrib-python-headless
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
-⸻
-License
+---
 
-This repository is provided under the MIT License (see LICENSE if present). Ensure that any training images you add to data/ are cleared for commercial use within your organization.
+## License
+
+Licensed under **Deepesh Gupta**. See [LICENSE](LICENSE) for details.
