@@ -19,3 +19,14 @@ data/
 !data/.gitkeep
 
 logs/
+.venv/
+__pycache__/
+*.pyc
+data/
+train/
+val/
+samples/
+*.pt
+*.onnx
+eval_outputs/
+uploads/
